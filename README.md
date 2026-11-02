@@ -1,155 +1,157 @@
-# ⚡ AIStudio Agent: Universal Google AI Studio Gateway & Payload Engine
+# ⚡ AIStudio Agent: Cổng Kết Nối & Bộ Chuyển Đổi Payload Google AI Studio Độc Lập
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dependencies](https://img.shields.io/badge/dependencies-0%20external-brightgreen.svg)](https://github.com/RealTrueHieu/aistudio-agent)
-[![Protocol](https://img.shields.io/badge/protocol-OpenAI%20%7C%20Anthropic-orange.svg)](https://github.com/RealTrueHieu/aistudio-agent)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/RealTrueHieu/aistudio-agent)
+[![Phiên bản Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Thư viện ngoài](https://img.shields.io/badge/th%C6%B0%20vi%E1%BB%87n%20ngo%C3%A0i-0%20(zero%20deps)-brightgreen.svg)](https://github.com/RealTrueHieu/aistudio-agent)
+[![Chuẩn giao thức](https://img.shields.io/badge/chu%E1%BA%A9n-OpenAI%20%7C%20Anthropic-orange.svg)](https://github.com/RealTrueHieu/aistudio-agent)
+[![Kiểm thử](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-3%2F3%20passed-brightgreen.svg)](https://github.com/RealTrueHieu/aistudio-agent)
 
-> **Autonomous Gateway & Payload Transformation Engine for Google AI Studio.**  
-> Seamlessly bridges **OpenAI Chat Completions** (`/v1/chat/completions`) & **Anthropic Messages** (`/v1/messages`) protocols into Google AI Studio native format (`GenerateContent`).  
-> **100% Pure Python Standard Library — Zero External Dependencies (`pip install 0`)!**
-
----
-
-## 🌟 Key Highlights
-
-* **Zero External Dependencies**: Works straight out of the box with any Python 3.8+ installation (`urllib`, `http.server`, `json`, `threading`).
-* **Universal 2-Way Protocol Transformer**:
-  - Translates OpenAI Chat & Anthropic Claude requests into Google AI Studio native JSON/Protobuf specifications.
-  - Automatically handles `systemInstruction`, multi-turn `contents`, `generationConfig`, and `safetySettings`.
-* **Deep Thinking & Reasoning Engine**:
-  - Full native support for Gemini 2.5 / 3.8 / 4.0 reasoning budgets (`thinkingConfig.thinkingBudget`, `includeThoughts: true`).
-  - Separates reasoning traces (`reasoning_content`) from actual response tokens in real-time SSE streaming.
-* **Autonomous Multi-Account Session Pool**:
-  - In-memory Round-Robin load balancer across multiple accounts.
-  - Pro Tier prioritization, automatic rate-limit detection (`429 / 503`), and smart exponential cooldown recovery.
-* **Drop-in IDE Compatibility**:
-  - Works instantly with **Zed Editor**, **Cursor**, **Cline**, **Claude Code**, **Continue.dev**, **NextChat**, and **Cherry Studio**.
+> **Cổng Gateway & Bộ biên dịch Payload Google AI Studio thuần Python.**  
+> Chuyển đổi thông suốt chuẩn giao thức **OpenAI Chat Completions** (`/v1/chat/completions`) & **Anthropic Claude Messages** (`/v1/messages`) sang đúng định dạng native của Google AI Studio (`GenerateContent`).  
+> **100% Python Standard Library — Không cần cài đặt bất kỳ thư viện ngoài nào (`pip install 0`)!**
 
 ---
 
-## 🏗️ Architecture Overview
+## 🌟 Điểm Nổi Bật Của Dự Án
+
+* **Không Phụ Thuộc Thư Viện Ngoài (Zero External Dependencies)**:
+  - Chạy ngay lập tức trên mọi máy tính đã cài Python 3.8+ mà không cần `pip install` bất cứ gói nào (hoàn toàn dùng thư viện chuẩn `urllib`, `http.server`, `json`, `threading`).
+* **Biên Dịch Payload Hai Chiều Hoàn Hảo**:
+  - Tự động nhận diện và bóc tách `systemInstruction`, nội dung hội thoại nhiều lượt (`contents`), cấu hình sinh câu trả lời (`generationConfig`) và bộ lọc an toàn (`safetySettings`).
+* **Hỗ Trợ Luồng Suy Nghĩ Sâu (Deep Thinking / Reasoning Budget)**:
+  - Tương thích đầy đủ tham số `thinkingConfig` (`thinkingBudget`, `includeThoughts: true`) trên các dòng mô hình mới (Gemini 2.5, Gemini 3.8, Gemini 4.0 Argon).
+  - Tách bạch luồng suy nghĩ (`reasoning_content`) và nội dung trả lời (`content`) theo thời gian thực (Real-time SSE Streaming).
+* **Quản Lý Phiên & Cân Bằng Tải Đa Tài Khoản (Session Pool)**:
+  - Tích hợp sẵn bộ điều phối Round-Robin luân phiên nhiều tài khoản AI Studio.
+  - Tự động nhận diện tài khoản Pro Tier, tự phát hiện rate limit (`HTTP 429` / `503`) để đưa tài khoản vào thời gian chờ (cooldown) và tự phục hồi khi hết hạn.
+* **Tương Thích Mọi Trình Soạn Thảo & Ứng Dụng AI**:
+  - Dùng làm Local Gateway cắm trực tiếp vào **Zed Editor**, **Cursor**, **Cline**, **Claude Code**, **Continue.dev**, **NextChat**, **Cherry Studio**.
+
+---
+
+## 🏗️ Sơ Đồ Kiến Trúc Hệ Thống
 
 ```mermaid
 graph TD
-    Client["Client / IDE (Cursor, Zed, Cline, cURL)"]
+    Client["Ứng dụng / IDE (Cursor, Zed, Cline, cURL)"]
     
-    subgraph AIStudioAgent ["AIStudio Agent Gateway (Port 8080)"]
-        Router["HTTP Router / Ingestion"]
-        Transformer["Payload Transformer (OpenAI / Anthropic <-> AI Studio)"]
-        SessionPool["Session Pool & Load Balancer"]
-        Streamer["SSE Realtime Stream Parser"]
+    subgraph AIStudioAgent ["AIStudio Agent Gateway (Cổng 8080)"]
+        Router["Bộ Định Tuyến HTTP Router"]
+        Transformer["Bộ Biên Dịch Payload (OpenAI / Anthropic <-> AI Studio)"]
+        SessionPool["Quản Lý Phiên & Cân Bằng Tải Tài Khoản"]
+        Streamer["Bộ Xử Lý Luồng Dữ Liệu SSE Trực Tiếp"]
     end
     
-    subgraph Upstream ["Google AI Studio Endpoints"]
-        AIS1["AI Studio Account Pool (Pro Tier)"]
-        AIS2["AI Studio Account Pool (Free Tier)"]
-        Failover["Cluster Auto-Failover"]
+    subgraph Upstream ["Cụm Máy Chủ Google AI Studio"]
+        AIS1["Tài Khoản AI Studio Pro"]
+        AIS2["Tài Khoản AI Studio Miễn Phí"]
+        Failover["Tự Động Chuyển Vùng Dự Phòng (Auto-Failover)"]
     end
     
-    Client -->|/v1/chat/completions or /v1/messages| Router
+    Client -->|Gửi /v1/chat/completions hoặc /v1/messages| Router
     Router --> Transformer
     Transformer --> SessionPool
     SessionPool --> AIS1
-    SessionPool -.->|On Rate Limit / 429| AIS2
+    SessionPool -.->|Khi dính 429 Rate Limit| AIS2
     AIS1 --> Failover
     AIS1 --> Streamer
-    Streamer -->|Formatted SSE / Chunks| Client
+    Streamer -->|Trả về chuỗi SSE kèm suy nghĩ reasoning| Client
 ```
 
 ---
 
-## 📂 Repository Structure
+## 📂 Cấu Trúc Mã Nguồn
 
 ```text
 aistudio-agent/
-├── aistudio_agent.py          # Core Engine: CLI Agent, Gateway Server & Python SDK
-├── payload_transformer.py     # Bi-directional Protocol Transformer (OpenAI/Anthropic <-> AI Studio)
-├── session_manager.py         # Multi-account pool, load balancer, health checks & cooldowns
-├── test_agent.py              # Zero-dependency unit test suite
-├── SKILL.md                   # Antigravity & Agentic Frameworks skill definition
-├── LICENSE                    # MIT License
-├── requirements.txt           # Optional dependencies (optional aiohttp/requests)
-├── .gitignore                 # Standard clean Git ignore rules
-├── README.md                  # Comprehensive Documentation
+├── aistudio_agent.py          # Script trung tâm: CLI Agent, Gateway Server & Python SDK
+├── payload_transformer.py     # Bộ biên dịch Payload 2 chiều: OpenAI/Anthropic <-> AI Studio
+├── session_manager.py         # Quản lý tài khoản, cân bằng tải Round-Robin & tự động cooldown
+├── test_agent.py              # Bộ kiểm thử tự động (Unit Test 100% offline)
+├── SKILL.md                   # File đặc tả kỹ năng cho Antigravity & Agentic Frameworks
+├── LICENSE                    # Giấy phép mã nguồn mở MIT
+├── requirements.txt           # File requirements (tùy chọn)
+├── .gitignore                 # Bỏ qua các file rác, virtualenv, pycache
+├── README.md                  # Tài liệu hướng dẫn sử dụng tiếng Việt
 └── examples/
-    ├── python_sdk_example.py  # Python OpenAI SDK drop-in integration
-    ├── curl_examples.sh       # Ready-to-run terminal cURL commands
-    └── raw_payload_samples.json # Sample native AI Studio JSON requests
+    ├── python_sdk_example.py  # Mẫu code Python gọi qua SDK chuẩn OpenAI
+    ├── curl_examples.sh       # Các lệnh cURL mẫu chạy trực tiếp từ Terminal
+    └── raw_payload_samples.json # File JSON mẫu payload native của Google AI Studio
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Hướng Dẫn Sử Dụng Nhanh
 
-### 1. Run as a Standalone Local Gateway Server
+### Cách 1: Khởi Chạy Local Gateway Server (Khuyên Dùng Cho IDE)
 
-Start the lightweight gateway server on port `8080` (or custom port):
+Chạy lệnh sau trên terminal để mở một máy chủ Gateway trung gian tại máy tính của bạn:
 
 ```bash
-# Start Gateway on port 8080
+# Khởi động server trên cổng mặc định 8080
 python aistudio_agent.py --serve --port 8080
 
-# Or run with custom upstream endpoint / API Key:
+# Hoặc tùy biến endpoint upstream và API Key của bạn:
 python aistudio_agent.py --serve --port 8080 --endpoint https://truehieu.eu.cc --api-key your-api-key
 ```
 
-Your local gateway now exposes industry-standard endpoints:
-* **OpenAI Chat Completions:** `http://127.0.0.1:8080/v1/chat/completions`
-* **Anthropic Claude Messages:** `http://127.0.0.1:8080/v1/messages`
-* **Models Catalog:** `http://127.0.0.1:8080/v1/models`
-* **Health Check:** `http://127.0.0.1:8080/healthz`
+Sau khi chạy, server sẽ cung cấp các đường dẫn API chuẩn quốc tế:
+* **Endpoint OpenAI Chat:** `http://127.0.0.1:8080/v1/chat/completions`
+* **Endpoint Anthropic Messages:** `http://127.0.0.1:8080/v1/messages`
+* **Danh mục Models:** `http://127.0.0.1:8080/v1/models`
+* **Kiểm tra trạng thái:** `http://127.0.0.1:8080/healthz`
 
 ---
 
-### 2. Interactive CLI Agent (Direct Terminal Usage)
+### Cách 2: Sử Dụng Như CLI Agent (Hỏi Đáp Trực Tiếp Từ Dòng Lệnh)
 
-Ask questions directly from your terminal with streaming output:
+Bạn có thể trò chuyện hoặc hỏi code ngay trên cửa sổ Command Prompt / PowerShell / Terminal:
 
 ```bash
-# Quick query with default model
-python aistudio_agent.py "Explain the Raft Consensus Algorithm in 3 bullet points"
+# Hỏi nhanh với model mặc định (tự động stream kết quả ra màn hình)
+python aistudio_agent.py "Giải thích thuật toán đồng thuận Raft trong 3 gạch đầu dòng"
 
-# Specify a high-speed flash model
-python aistudio_agent.py --model gemini-3.8-flash "How does TCP cubic work?"
+# Chỉ định mô hình Flash tốc độ cao
+python aistudio_agent.py --model gemini-3.8-flash "Cơ chế bắt tay 3 bước của TCP hoạt động thế nào?"
 
-# Query with Deep Reasoning (Thinking Budget: 2048 tokens)
-python aistudio_agent.py --model gemini-2.5-pro --thinking 2048 "Solve this system of modular equations..."
+# Hỏi kèm budget suy nghĩ chuyên sâu (Thinking Budget: 2048 tokens)
+python aistudio_agent.py --model gemini-2.5-pro --thinking 2048 "Giải bài toán tìm dãy con tăng dài nhất bằng Quy Hoạch Động trong Python"
 ```
 
 ---
 
-### 3. Embed Directly into Python (SDK Mode)
+### Cách 3: Nhúng Trực Tiếp Vào Source Code Python (SDK Mode)
 
-You can use `AIStudioAgent` as an internal class in any Python script:
+Không cần mở server, bạn có thể `import` trực tiếp class `AIStudioAgent` vào bất kỳ file Python nào trong dự án của bạn:
 
 ```python
 from aistudio_agent import AIStudioAgent
 
+# Khởi tạo agent
 agent = AIStudioAgent()
 
-# 1. Non-streaming call
-response = agent.chat("Explain Zero-Knowledge Proofs simply.", model="gemini-2.5-pro")
-print(response["choices"][0]["message"]["content"])
+# 1. Gọi dạng Non-streaming (nhận toàn bộ kết quả một lần)
+ket_qua = agent.chat("Giải thích công nghệ Zero-Knowledge Proof thật đơn giản.", model="gemini-2.5-pro")
+print(ket_qua["choices"][0]["message"]["content"])
 
-# 2. Real-time Streaming (Tokens + Deep Reasoning)
-for token in agent.stream("Write a quick Python generator for prime numbers.", model="gemini-3.8-flash"):
+# 2. Gọi dạng Streaming trực tiếp (nhận từng token kèm suy nghĩ reasoning)
+print("\nĐang sinh câu trả lời:")
+for token in agent.stream("Viết hàm Python kiểm tra số nguyên tố tối ưu nhất.", model="gemini-3.8-flash"):
     print(token, end="", flush=True)
 ```
 
 ---
 
-## 💻 IDE & Tool Integrations
+## 💻 Hướng Dẫn Tích Hợp Vào Các Trình Soạn Thảo (IDE)
 
-### Zed Editor (`~/.config/zed/settings.json`)
+### 1. Cấu hình trên Zed Editor (`~/.config/zed/settings.json`)
 ```json
 {
   "language_models": {
     "openai": {
       "api_url": "http://127.0.0.1:8080/v1",
       "available_models": [
-        { "name": "ais/gemini-4-argon", "max_tokens": 8192 },
+        { "name": "gemini-4-argon", "max_tokens": 8192 },
         { "name": "gemini-2.5-pro", "max_tokens": 8192 },
         { "name": "gemini-3.8-flash", "max_tokens": 8192 }
       ]
@@ -158,35 +160,38 @@ for token in agent.stream("Write a quick Python generator for prime numbers.", m
 }
 ```
 
-### Cursor / Continue.dev / Cline
+### 2. Cấu hình trên Cursor / Cline / Continue.dev
+* **API Provider:** Chọn `OpenAI Compatible`
 * **Base URL:** `http://127.0.0.1:8080/v1`
-* **API Key:** `any-string` (or your configured master key)
-* **Model:** `gemini-2.5-pro` or `gemini-3.8-flash` or `gemini-4-argon`
+* **API Key:** Điền bất kỳ ký tự nào (ví dụ: `sk-aistudio-local`)
+* **Model Name:** Điền `gemini-2.5-pro`, `gemini-3.8-flash` hoặc `gemini-4-argon`
 
 ---
 
-## 🔄 Payload Transformation Cheat Sheet
+## 🔄 Bảng Quy Đổi Chi Tiết Payload (Payload Cheat Sheet)
 
-| OpenAI / Anthropic Field | Google AI Studio Native Field | Processing Logic |
+Dưới đây là chi tiết cách bộ `payload_transformer.py` xử lý tương thích giữa các chuẩn:
+
+| Trường OpenAI / Anthropic | Trường Chuẩn Native Google AI Studio | Giải Thích Chi Tiết Cách Xử Lý |
 | :--- | :--- | :--- |
-| `messages: [{"role": "system", ...}]` | `systemInstruction: {"parts": [{"text": ...}]}` | Extracted & formatted as dedicated instruction |
-| `messages: [{"role": "user", ...}]` | `contents: [{"role": "user", "parts": [...]}]` | Mapped to user turn with structured parts |
-| `messages: [{"role": "assistant", ...}]` | `contents: [{"role": "model", "parts": [...]}]` | Mapped to `model` role |
-| `thinking: {"budget_tokens": 2048}` | `generationConfig: {"thinkingConfig": {...}}` | Enables internal reasoning token generation |
-| `tools: [{"type": "function", ...}]` | `tools: [{"functionDeclarations": [...]}]` | Validated and translated to Protobuf schema |
-| `image_url: {"url": "data:image/..."}` | `inlineData: {"mimeType": "...", "data": "..."}` | Automatically extracts MIME & pure Base64 |
+| `messages: [{"role": "system", ...}]` | `systemInstruction: {"parts": [{"text": ...}]}` | Bóc tách system prompt thành chỉ thị hệ thống độc lập |
+| `messages: [{"role": "user", ...}]` | `contents: [{"role": "user", "parts": [...]}]` | Chuyển đổi lượt hội thoại user thành mảng parts chuẩn |
+| `messages: [{"role": "assistant", ...}]` | `contents: [{"role": "model", "parts": [...]}]` | Google bắt buộc dùng role `model` thay vì `assistant` |
+| `thinking: {"budget_tokens": 2048}` | `generationConfig: {"thinkingConfig": {...}}` | Kích hoạt bộ sinh token tư duy sâu nội bộ |
+| `tools: [{"type": "function", ...}]` | `tools: [{"functionDeclarations": [...]}]` | Chuyển đổi định dạng Schema JSON sang Protobuf declaration |
+| `image_url: {"url": "data:image/..."}` | `inlineData: {"mimeType": "...", "data": "..."}` | Tự động bóc tách MIME type và chuỗi Base64 sạch |
 
 ---
 
-## 🧪 Self-Test Suite
+## 🧪 Chạy Kiểm Thử Hệ Thống (Self-Test)
 
-Run the built-in test suite to verify transformations and session pooling:
+Để đảm bảo mọi chức năng biến đổi và điều phối phiên hoạt động chính xác 100%, bạn chỉ cần chạy file test:
 
 ```bash
 python test_agent.py
 ```
 
-Expected output:
+Kết quả chuẩn đạt được:
 ```text
 === AI STUDIO AGENT TEST SUITE ===
 [1/3] Testing OpenAI -> AI Studio Transformation...
@@ -201,16 +206,7 @@ ALL UNIT TESTS PASSED SUCCESSFULLY! Ready for open source.
 
 ---
 
-## 👥 Tóm Tắt Tiếng Việt (Vietnamese Summary)
+## 📄 Giấy Phép & Tác Quyền
 
-* **Gói Agent độc lập 100% Python Standard Library**: Không cần bất kỳ lệnh `pip install` nào.
-* **Tự động dịch Payload**: Chuyển đổi thông suốt các định dạng từ OpenAI & Anthropic Claude sang chuẩn native của Google AI Studio (`GenerateContent`).
-* **Hỗ trợ đầy đủ**: Streaming SSE, tư duy sâu (Reasoning / Thinking tokens), Tool / Function Calling và phân giải hình ảnh Multimodal Base64.
-* **Tích hợp tức thì**: Chạy lệnh `python aistudio_agent.py --serve` là có ngay local Gateway Server kết nối với Zed Editor, Cursor, Cline, Claude Code.
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.  
-Created with ❤️ by **[RealTrueHieu](https://github.com/RealTrueHieu)** & **Antigravity**.
+Dự án này được phân phối dưới giấy phép mã nguồn mở **[MIT License](LICENSE)** - hoàn toàn tự do sử dụng trong các dự án cá nhân và thương mại.  
+Được phát triển với tất cả tâm huyết bởi **[RealTrueHieu](https://github.com/RealTrueHieu)** & **Antigravity**.
