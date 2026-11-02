@@ -1,0 +1,136 @@
+{
+  "description": "Comprehensive AI Studio Payload Samples for Direct Integration & Sharing",
+  "samples": {
+    "1_standard_chat": {
+      "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "payload": {
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Hello, explain how neural networks learn in simple terms."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "temperature": 0.7,
+          "topP": 0.95,
+          "maxOutputTokens": 1024
+        },
+        "safetySettings": [
+          {
+            "category": "HARM_CATEGORY_HARASSMENT",
+            "threshold": "BLOCK_NONE"
+          },
+          {
+            "category": "HARM_CATEGORY_HATE_SPEECH",
+            "threshold": "BLOCK_NONE"
+          },
+          {
+            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "threshold": "BLOCK_NONE"
+          },
+          {
+            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+            "threshold": "BLOCK_NONE"
+          }
+        ]
+      }
+    },
+    "2_reasoning_and_thinking": {
+      "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
+      "payload": {
+        "systemInstruction": {
+          "parts": [
+            {
+              "text": "You are a world-class competitive programming specialist. Think step-by-step rigorously before outputting code."
+            }
+          ]
+        },
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Solve the 3SUM problem in O(N^2) time complexity with full proof."
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "temperature": 0.2,
+          "maxOutputTokens": 4096,
+          "thinkingConfig": {
+            "thinkingBudget": 2048,
+            "includeThoughts": true
+          }
+        }
+      }
+    },
+    "3_function_calling_tools": {
+      "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+      "payload": {
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "What is the weather in Tokyo right now?"
+              }
+            ]
+          }
+        ],
+        "tools": [
+          {
+            "functionDeclarations": [
+              {
+                "name": "get_current_weather",
+                "description": "Fetch current weather conditions for a specified location.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "type": "string",
+                      "description": "City and country, e.g. Tokyo, Japan"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": ["celsius", "fahrenheit"]
+                    }
+                  },
+                  "required": ["location"]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "4_multimodal_vision": {
+      "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+      "payload": {
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "What is depicted in this image and what text is visible?"
+              },
+              {
+                "inlineData": {
+                  "mimeType": "image/png",
+                  "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
