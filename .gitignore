@@ -37,3 +37,9 @@ wheels/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Executables & Binaries
+*.exe
+*.dll
+*.so
+

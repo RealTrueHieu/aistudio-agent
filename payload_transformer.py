@@ -8,6 +8,7 @@ Zero external dependencies - 100% Python standard library compatible.
 import json
 import base64
 import re
+import uuid
 from typing import Dict, Any, List, Optional, Tuple, Union
 
 # Permissive safety settings to avoid upstream false positives
@@ -69,6 +70,7 @@ class AIStudioPayloadTransformer:
 
         contents = []
         system_instruction_parts = []
+        tool_call_names = {}  # tool_call_id -> function name
 
         # 1. Parse Messages
         messages = openai_req.get("messages", [])
@@ -101,6 +103,9 @@ class AIStudioPayloadTransformer:
                         fn_args = json.loads(args_str) if isinstance(args_str, str) else args_str
                     except Exception:
                         fn_args = {}
+                    # Remember tool_call_id -> function name so the tool response
+                    # can carry the correct name for Google's functionResponse.
+                    tool_call_names[tc.get("id", "")] = fn_name
                     parts.append({
                         "functionCall": {
                             "name": fn_name,
@@ -112,10 +117,11 @@ class AIStudioPayloadTransformer:
             elif role == "tool":
                 tool_call_id = msg.get("tool_call_id", "default_call")
                 tool_content = content if isinstance(content, str) else json.dumps(content)
+                fn_name = tool_call_names.get(tool_call_id, tool_call_id)
                 parts.append({
                     "functionResponse": {
-                        "name": tool_call_id,
-                        "response": {"name": tool_call_id, "content": tool_content}
+                        "name": fn_name,
+                        "response": {"name": fn_name, "content": tool_content}
                     }
                 })
 
@@ -183,6 +189,15 @@ class AIStudioPayloadTransformer:
                 "thinkingBudget": thinking_budget,
                 "includeThoughts": True
             }
+        elif "reasoning_effort" in openai_req and openai_req["reasoning_effort"]:
+            # Map OpenAI-style reasoning_effort onto Gemini thinking budgets
+            effort_budgets = {"none": 0, "low": 4096, "medium": 12288, "high": 24576}
+            eb = effort_budgets.get(str(openai_req["reasoning_effort"]).lower())
+            if eb is not None:
+                generation_config["thinkingConfig"] = {
+                    "thinkingBudget": eb,
+                    "includeThoughts": eb > 0
+                }
 
         # 3. Assemble Payload
         aistudio_payload: Dict[str, Any] = {
@@ -364,23 +379,32 @@ class AIStudioPayloadTransformer:
                 openai_finish_reason = "content_filter"
 
         delta: Dict[str, Any] = {}
+        content_parts: List[str] = []
+        reasoning_parts: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
         for p in parts:
             # Check for thinking/reasoning parts
             if p.get("thought"):
-                delta["reasoning_content"] = p.get("text", "")
+                reasoning_parts.append(p.get("text", ""))
             elif "text" in p:
-                delta["content"] = p.get("text", "")
+                content_parts.append(p.get("text", ""))
             elif "functionCall" in p:
                 fc = p["functionCall"]
-                delta["tool_calls"] = [{
-                    "index": 0,
-                    "id": f"call_{fc.get('name', 'fn')}",
+                tool_calls.append({
+                    "index": len(tool_calls),
+                    "id": f"call_{fc.get('name', 'fn')}_{uuid.uuid4().hex[:6]}",
                     "type": "function",
                     "function": {
                         "name": fc.get("name"),
                         "arguments": json.dumps(fc.get("args", {}))
                     }
-                }]
+                })
+        if content_parts:
+            delta["content"] = "".join(content_parts)
+        if reasoning_parts:
+            delta["reasoning_content"] = "".join(reasoning_parts)
+        if tool_calls:
+            delta["tool_calls"] = tool_calls
 
         if not delta and not openai_finish_reason:
             return None
@@ -464,3 +488,305 @@ class AIStudioPayloadTransformer:
             },
             "provider_model": model_name
         }
+
+    # ------------------------------------------------------------------
+    # Anthropic <-> OpenAI translation (for the local /v1/messages endpoint)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def anthropic_to_openai(anthropic_req: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Converts an Anthropic /v1/messages request into an equivalent
+        OpenAI /v1/chat/completions request (messages, tools, sampling, thinking).
+        """
+        openai_req: Dict[str, Any] = {"model": anthropic_req.get("model", "gemini-2.5-pro")}
+        messages: List[Dict[str, Any]] = []
+
+        # 1. System prompt
+        system = anthropic_req.get("system")
+        if isinstance(system, str) and system.strip():
+            messages.append({"role": "system", "content": system})
+        elif isinstance(system, list):
+            sys_texts = [b.get("text", "") for b in system if isinstance(b, dict)]
+            joined = "\n".join(t for t in sys_texts if t)
+            if joined:
+                messages.append({"role": "system", "content": joined})
+
+        # 2. Messages (text / image / tool_use / tool_result blocks)
+        for msg in anthropic_req.get("messages", []):
+            role = "assistant" if msg.get("role") == "assistant" else "user"
+            content = msg.get("content")
+
+            if isinstance(content, str):
+                messages.append({"role": role, "content": content})
+                continue
+
+            text_parts: List[str] = []
+            image_parts: List[Dict[str, Any]] = []
+            tool_calls: List[Dict[str, Any]] = []
+
+            for block in content or []:
+                if not isinstance(block, dict):
+                    continue
+                b_type = block.get("type")
+                if b_type == "text":
+                    text_parts.append(block.get("text", ""))
+                elif b_type == "image":
+                    source = block.get("source", {})
+                    if source.get("type") == "base64":
+                        data_uri = f"data:{source.get('media_type', 'image/png')};base64,{source.get('data', '')}"
+                        image_parts.append({"type": "image_url", "image_url": {"url": data_uri}})
+                elif b_type == "tool_use":
+                    tool_calls.append({
+                        "id": block.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name", ""),
+                            "arguments": json.dumps(block.get("input", {}))
+                        }
+                    })
+                elif b_type == "tool_result":
+                    rc = block.get("content", "")
+                    if not isinstance(rc, str):
+                        rc = json.dumps(rc)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": block.get("tool_use_id", "call_default"),
+                        "content": rc
+                    })
+
+            if role == "assistant":
+                m: Dict[str, Any] = {"role": "assistant", "content": "\n".join(t for t in text_parts if t) or None}
+                if tool_calls:
+                    m["tool_calls"] = tool_calls
+                messages.append(m)
+            else:
+                combined = [{"type": "text", "text": t} for t in text_parts if t] + image_parts
+                if combined:
+                    if len(combined) == 1 and combined[0]["type"] == "text":
+                        messages.append({"role": "user", "content": combined[0]["text"]})
+                    else:
+                        messages.append({"role": "user", "content": combined})
+
+        if not messages:
+            messages.append({"role": "user", "content": "Hello"})
+        openai_req["messages"] = messages
+
+        # 3. Sampling params
+        if "max_tokens" in anthropic_req:
+            openai_req["max_tokens"] = anthropic_req["max_tokens"]
+        if "temperature" in anthropic_req:
+            openai_req["temperature"] = anthropic_req["temperature"]
+        if "top_p" in anthropic_req:
+            openai_req["top_p"] = anthropic_req["top_p"]
+        if anthropic_req.get("stop_sequences"):
+            openai_req["stop"] = anthropic_req["stop_sequences"]
+
+        # 4. Thinking budget
+        th = anthropic_req.get("thinking")
+        if isinstance(th, dict) and th.get("type") == "enabled" and th.get("budget_tokens"):
+            openai_req["max_thinking_tokens"] = int(th["budget_tokens"])
+
+        # 5. Tools
+        if anthropic_req.get("tools"):
+            openai_req["tools"] = [{
+                "type": "function",
+                "function": {
+                    "name": t.get("name"),
+                    "description": t.get("description", ""),
+                    "parameters": t.get("input_schema", {"type": "object", "properties": {}})
+                }
+            } for t in anthropic_req["tools"] if isinstance(t, dict)]
+
+        return openai_req
+
+    @staticmethod
+    def openai_to_anthropic_response(openai_resp: Dict[str, Any], model: str = "gemini-2.5-pro") -> Dict[str, Any]:
+        """Converts an OpenAI chat completion response into Anthropic /v1/messages format."""
+        if isinstance(openai_resp, dict) and openai_resp.get("error"):
+            err = openai_resp["error"]
+            return {"type": "error", "error": {"type": err.get("type", "api_error"),
+                                              "message": err.get("message", "upstream error")}}
+
+        choices = openai_resp.get("choices") or [{}]
+        msg = choices[0].get("message") or {}
+        content: List[Dict[str, Any]] = []
+
+        reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
+        if reasoning:
+            content.append({"type": "thinking", "thinking": reasoning})
+        text = msg.get("content") or ""
+        if text:
+            content.append({"type": "text", "text": text})
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function", {})
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except Exception:
+                args = {}
+            content.append({"type": "tool_use", "id": tc.get("id", "call_default"),
+                            "name": fn.get("name", ""), "input": args})
+
+        has_tools = any(c["type"] == "tool_use" for c in content)
+        finish = choices[0].get("finish_reason")
+        if has_tools:
+            stop_reason = "tool_use"
+        elif finish == "length":
+            stop_reason = "max_tokens"
+        else:
+            stop_reason = "end_turn"
+
+        usage = openai_resp.get("usage") or {}
+        return {
+            "id": openai_resp.get("id", f"msg_{uuid.uuid4().hex[:16]}"),
+            "type": "message",
+            "role": "assistant",
+            "model": model,
+            "content": content or [{"type": "text", "text": ""}],
+            "stop_reason": stop_reason,
+            "stop_sequence": None,
+            "usage": {
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0)
+            }
+        }
+
+
+class AnthropicStreamTranslator:
+    """Stateful translator: OpenAI SSE chunks -> Anthropic Messages SSE events."""
+
+    def __init__(self, model: str = "gemini-2.5-pro"):
+        self.model = model
+        self.started = False
+        self.block_index = -1
+        self.block_type = None  # "thinking" | "text" | "tool_use"
+        self._tool_name = ""
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.stop_reason = None
+
+    @staticmethod
+    def _event(event_type: str, data: Dict[str, Any]) -> str:
+        return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    def _message_start(self) -> str:
+        self.started = True
+        return self._event("message_start", {
+            "type": "message_start",
+            "message": {
+                "id": f"msg_{uuid.uuid4().hex[:16]}",
+                "type": "message",
+                "role": "assistant",
+                "model": self.model,
+                "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0}
+            }
+        })
+
+    def _open_block(self, btype: str) -> str:
+        out = ""
+        if self.block_type is not None:
+            out += self._close_block()
+        self.block_index += 1
+        self.block_type = btype
+        block: Dict[str, Any] = {"type": btype, "index": self.block_index}
+        if btype == "text":
+            block["text"] = ""
+        elif btype == "thinking":
+            block["thinking"] = ""
+        elif btype == "tool_use":
+            block.update({"id": f"call_{uuid.uuid4().hex[:8]}", "name": self._tool_name or "", "input": {}})
+        return out + self._event("content_block_start", {
+            "type": "content_block_start", "index": self.block_index, "content_block": block
+        })
+
+    def _close_block(self) -> str:
+        out = self._event("content_block_stop", {"type": "content_block_stop", "index": self.block_index})
+        self.block_type = None
+        return out
+
+    def handle_chunk(self, chunk_obj: Dict[str, Any]) -> str:
+        """Feeds one parsed OpenAI chunk, returns Anthropic SSE text (may be empty)."""
+        if isinstance(chunk_obj.get("error"), dict):
+            return self._event("error", {
+                "type": "error",
+                "error": {"type": "api_error", "message": chunk_obj["error"].get("message", "upstream error")}
+            })
+
+        self._absorb_usage(chunk_obj.get("usage"))
+        choices = chunk_obj.get("choices") or []
+        if not choices:
+            return ""
+        if not self.started:
+            start = self._message_start()
+        else:
+            start = ""
+
+        choice = choices[0]
+        delta = choice.get("delta") or {}
+        out = start
+
+        rc = delta.get("reasoning_content")
+        if rc:
+            if self.block_type != "thinking":
+                out += self._open_block("thinking")
+            out += self._event("content_block_delta", {
+                "type": "content_block_delta", "index": self.block_index,
+                "delta": {"type": "thinking_delta", "thinking": rc}
+            })
+
+        content = delta.get("content")
+        if content:
+            if self.block_type != "text":
+                out += self._open_block("text")
+            out += self._event("content_block_delta", {
+                "type": "content_block_delta", "index": self.block_index,
+                "delta": {"type": "text_delta", "text": content}
+            })
+
+        tcs = delta.get("tool_calls")
+        if tcs:
+            tc = tcs[0]
+            fn = tc.get("function", {})
+            if fn.get("name") and self.block_type != "tool_use":
+                self._tool_name = fn["name"]
+                out += self._open_block("tool_use")
+            if self.block_type == "tool_use":
+                args = fn.get("arguments") or ""
+                if args:
+                    out += self._event("content_block_delta", {
+                        "type": "content_block_delta", "index": self.block_index,
+                        "delta": {"type": "input_json_delta", "partial_json": args}
+                    })
+
+        fr = choice.get("finish_reason")
+        if fr:
+            if fr == "length":
+                self.stop_reason = "max_tokens"
+            elif fr == "tool_calls" or self.block_type == "tool_use":
+                self.stop_reason = "tool_use"
+            else:
+                self.stop_reason = "end_turn"
+        return out
+
+    def _absorb_usage(self, usage):
+        if usage:
+            self.input_tokens = usage.get("prompt_tokens", self.input_tokens) or self.input_tokens
+            self.output_tokens = usage.get("completion_tokens", self.output_tokens) or self.output_tokens
+
+    def finish(self) -> str:
+        """Closes any open block and emits the terminating events."""
+        if not self.started:
+            return ""
+        out = ""
+        if self.block_type is not None:
+            out += self._close_block()
+        out += self._event("message_delta", {
+            "type": "message_delta",
+            "delta": {"stop_reason": self.stop_reason or "end_turn", "stop_sequence": None},
+            "usage": {"input_tokens": self.input_tokens, "output_tokens": self.output_tokens}
+        })
+        out += self._event("message_stop", {"type": "message_stop"})
+        return out

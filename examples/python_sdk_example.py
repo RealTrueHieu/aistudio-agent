@@ -8,7 +8,7 @@ from openai import OpenAI
 
 # 1. Connect either to the local Agent Server (localhost:8080) or the Cloud Gateway
 client = OpenAI(
-    base_url="https://truehieu.eu.cc/v1",
+    base_url="http://localhost:8080/v1",
     api_key="sk-your-agent-secret-key"
 )
 

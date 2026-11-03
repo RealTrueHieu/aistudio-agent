@@ -3,7 +3,7 @@
 # AI Studio Agent Ready-to-Run cURL Examples
 # ==============================================================================
 
-GATEWAY="https://truehieu.eu.cc/v1"
+GATEWAY="http://localhost:8080/v1"
 API_KEY="sk-your-agent-secret-key"
 
 echo "=== 1. Non-streaming Chat Completion ==="

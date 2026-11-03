@@ -92,7 +92,7 @@ Chạy lệnh sau trên terminal để mở một máy chủ Gateway trung gian 
 python aistudio_agent.py --serve --port 8080
 
 # Hoặc tùy biến endpoint upstream và API Key của bạn:
-python aistudio_agent.py --serve --port 8080 --endpoint https://truehieu.eu.cc --api-key your-api-key
+python aistudio_agent.py --serve --port 8080 --endpoint https://your-gateway.com --api-key your-api-key
 ```
 
 Sau khi chạy, server sẽ cung cấp các đường dẫn API chuẩn quốc tế:
